@@ -1,7 +1,7 @@
-import { createContext, ReactNode, useContext, useState } from 'react';
-import { toast } from 'react-toastify';
-import { api } from '../services/api';
-import { Product, Stock } from '../types';
+import { createContext, ReactNode, useContext, useState } from "react";
+import { toast } from "react-toastify";
+import { api } from "../services/api";
+import { Product, Stock } from "../types";
 
 interface CartProviderProps {
   children: ReactNode;
@@ -15,7 +15,7 @@ interface UpdateProductAmount {
 interface CartContextData {
   cart: Product[];
   addProduct: (productId: number) => Promise<void>;
-  removeProduct: (productId: number) => void;
+  removeProduct: (productId: number) => Promise<void>;
   updateProductAmount: ({ productId, amount }: UpdateProductAmount) => void;
 }
 
@@ -23,28 +23,58 @@ const CartContext = createContext<CartContextData>({} as CartContextData);
 
 export function CartProvider({ children }: CartProviderProps): JSX.Element {
   const [cart, setCart] = useState<Product[]>(() => {
-    // const storagedCart = Buscar dados do localStorage
-
-    // if (storagedCart) {
-    //   return JSON.parse(storagedCart);
-    // }
+    const storagedCart = localStorage.getItem("@RocketShoes:cart");
+    if (storagedCart) {
+      return JSON.parse(storagedCart);
+    }
 
     return [];
   });
 
   const addProduct = async (productId: number) => {
     try {
-      // TODO
-    } catch {
-      // TODO
+      const newCart = [...cart];
+      const productIsOnStock = await api.get(`stock/${productId}`);
+      const product = await api.get(`products/${productId}`);
+
+      let cartItemFind = newCart.find(
+        (cartItem) => cartItem.id === productId
+      );
+
+      if (cartItemFind) {
+        if (cartItemFind.amount >= productIsOnStock.data.amount) {
+          toast.error("Quantidade solicitada fora de estoque");
+          return;
+        }
+        cartItemFind.amount += 1;
+        setCart(newCart);
+        localStorage.setItem("@RocketShoes:cart", JSON.stringify(newCart));
+      } else {
+        newCart.push({ ...product.data, amount: 1 });
+        setCart(newCart);
+        localStorage.setItem("@RocketShoes:cart", JSON.stringify(newCart));
+      }
+    } catch (err) {
+      toast.error(`Erro na adição do produto`);
     }
   };
 
-  const removeProduct = (productId: number) => {
+  const removeProduct = async (productId: number) => {
     try {
-      // TODO
+      if (cart.find((cartItem) => cartItem.id === productId)) {
+        const listWithoutExcludedItem = cart.filter(
+          (cartItem) => cartItem.id !== productId
+        );
+        setCart(listWithoutExcludedItem);
+        localStorage.setItem(
+          "@RocketShoes:cart",
+          JSON.stringify(listWithoutExcludedItem)
+        );
+      } else {
+        throw new Error();
+      }
     } catch {
-      // TODO
+      toast.error("Erro na remoção do produto");
     }
   };
 
@@ -53,15 +83,45 @@ export function CartProvider({ children }: CartProviderProps): JSX.Element {
     amount,
   }: UpdateProductAmount) => {
     try {
-      // TODO
+      const newCart = [...cart];
+      const productIsOnStock = await api.get(`stock/${productId}`);
+      if (amount > productIsOnStock.data.amount) {
+        toast.error("Quantidade solicitada fora de estoque");
+        return;
+      } else {
+        if (amount < 1) {
+          throw new Error();
+        }
+        const product = await api.get(`products/${productId}`);
+        if (!product) {
+          throw new Error();
+        }
+
+        const cartItemFind = newCart.find(
+          (cartItem) => cartItem.id === productId
+        );
+        if (cartItemFind) {
+          cartItemFind.amount = amount;
+          setCart(newCart);
+          localStorage.setItem("@RocketShoes:cart", JSON.stringify(newCart));
+        } else {
+          throw new Error();
+        }
+      }
+      console.log(cart);
     } catch {
-      // TODO
+      toast.error("Erro na alteração de quantidade do produto");
     }
   };
 
   return (
     <CartContext.Provider
-      value={{ cart, addProduct, removeProduct, updateProductAmount }}
+      value={{
+        cart,
+        addProduct,
+        removeProduct,
+        updateProductAmount,
+      }}
     >
       {children}
     </CartContext.Provider>
